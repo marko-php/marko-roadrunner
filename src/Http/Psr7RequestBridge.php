@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Marko\Roadrunner\Http;
 
-use Marko\Roadrunner\Exceptions\UploadedFilesNotSupportedException;
+use Marko\Roadrunner\Exceptions\RoadRunnerException;
 use Marko\Routing\Http\Request;
+use Marko\Routing\Http\UploadedFile;
 use Psr\Http\Message\ServerRequestInterface;
+use Psr\Http\Message\UploadedFileInterface;
 
 class Psr7RequestBridge
 {
@@ -16,15 +18,18 @@ class Psr7RequestBridge
     private const array FORM_ENCODED_BODY_METHODS = ['PUT', 'PATCH', 'DELETE'];
 
     /**
-     * @throws UploadedFilesNotSupportedException
+     * Temporary files written for uploads whose PSR-7 stream is not backed by a local file.
+     *
+     * @var list<string>
+     */
+    private array $temporaryFiles = [];
+
+    /**
+     * @throws RoadRunnerException when an uploaded file cannot be written to a temporary file
      */
     public function bridge(
         ServerRequestInterface $psr7Request,
     ): Request {
-        if ($psr7Request->getUploadedFiles() !== []) {
-            throw UploadedFilesNotSupportedException::whenBridgingRequest();
-        }
-
         $server = $this->buildServer($psr7Request);
         $body = (string) $psr7Request->getBody();
 
@@ -34,7 +39,23 @@ class Psr7RequestBridge
             post: $this->resolvePost($psr7Request, $server, $body),
             body: $body,
             cookies: $psr7Request->getCookieParams(),
+            files: $this->mapUploadedFiles($psr7Request->getUploadedFiles()),
         );
+    }
+
+    /**
+     * Delete the temporary upload files this bridge wrote that were not moved away.
+     * Called after every request so a long-running worker never accumulates them.
+     */
+    public function removeTemporaryFiles(): void
+    {
+        foreach ($this->temporaryFiles as $path) {
+            if (is_file($path)) {
+                unlink($path);
+            }
+        }
+
+        $this->temporaryFiles = [];
     }
 
     /**
@@ -102,5 +123,92 @@ class Psr7RequestBridge
         }
 
         return $post;
+    }
+
+    /**
+     * @param array<mixed> $uploadedFiles
+     *
+     * @return array<string, UploadedFile|array<mixed>>
+     */
+    private function mapUploadedFiles(
+        array $uploadedFiles,
+    ): array {
+        $files = [];
+
+        foreach ($uploadedFiles as $key => $uploadedFile) {
+            if ($uploadedFile instanceof UploadedFileInterface) {
+                if ($uploadedFile->getError() !== UPLOAD_ERR_NO_FILE) {
+                    $files[$key] = $this->mapUploadedFile($uploadedFile);
+                }
+
+                continue;
+            }
+
+            if (is_array($uploadedFile)) {
+                $children = $this->mapUploadedFiles($uploadedFile);
+
+                if ($children !== []) {
+                    $files[$key] = array_is_list($uploadedFile) ? array_values($children) : $children;
+                }
+            }
+        }
+
+        return $files;
+    }
+
+    private function mapUploadedFile(
+        UploadedFileInterface $uploadedFile,
+    ): UploadedFile {
+        $error = $uploadedFile->getError();
+
+        return new UploadedFile(
+            tempPath: $error === UPLOAD_ERR_OK ? $this->localPathFor($uploadedFile) : '',
+            clientFilename: $uploadedFile->getClientFilename() ?? '',
+            clientMediaType: $uploadedFile->getClientMediaType() ?? '',
+            size: $uploadedFile->getSize() ?? 0,
+            error: $error,
+        );
+    }
+
+    /**
+     * RoadRunner already writes each upload to a temporary file and hands over a stream
+     * opened on it; reuse that path. Any other stream is copied to a temporary file this
+     * bridge owns and removes after the request.
+     *
+     * @throws RoadRunnerException
+     */
+    private function localPathFor(
+        UploadedFileInterface $uploadedFile,
+    ): string {
+        $stream = $uploadedFile->getStream();
+        $uri = $stream->getMetadata('uri');
+
+        if ($stream->getMetadata('wrapper_type') === 'plainfile' && is_string($uri) && is_file($uri)) {
+            return $uri;
+        }
+
+        $path = tempnam(sys_get_temp_dir(), 'marko-upload-');
+        if ($path === false) {
+            throw RoadRunnerException::temporaryUploadFileUnwritable(sys_get_temp_dir());
+        }
+
+        $this->temporaryFiles[] = $path;
+
+        if ($stream->isSeekable()) {
+            $stream->rewind();
+        }
+
+        $target = fopen($path, 'wb');
+        if ($target === false) {
+            throw RoadRunnerException::temporaryUploadFileUnwritable(dirname($path));
+        }
+
+        while (!$stream->eof()) {
+            fwrite($target, $stream->read(1048576));
+        }
+
+        fclose($target);
+
+        return $path;
     }
 }

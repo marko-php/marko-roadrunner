@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace Marko\Roadrunner\Tests\Http;
 
-use Marko\Roadrunner\Exceptions\UploadedFilesNotSupportedException;
 use Marko\Roadrunner\Http\Psr7RequestBridge;
+use Marko\Routing\Http\UploadedFile;
 use Nyholm\Psr7\ServerRequest;
 use Nyholm\Psr7\Stream;
-use Nyholm\Psr7\UploadedFile;
+use Nyholm\Psr7\UploadedFile as Psr7UploadedFile;
 
 describe('Psr7RequestBridge', function (): void {
     it('maps the request method from the psr7 request', function (): void {
@@ -141,21 +141,110 @@ describe('Psr7RequestBridge', function (): void {
             ->and($request->post('role'))->toBe('admin');
     });
 
-    it('throws a loud error when the psr7 request carries uploaded files', function (): void {
-        $uploadedFile = new UploadedFile(
-            Stream::create('file contents'),
-            13,
-            UPLOAD_ERR_OK,
-            'avatar.png',
-            'image/png',
-        );
-
+    it('maps a psr7 uploaded file to an UploadedFile', function (): void {
         $psr7Request = (new ServerRequest('POST', 'https://example.test/users'))
-            ->withUploadedFiles(['avatar' => $uploadedFile]);
+            ->withUploadedFiles([
+                'avatar' => new Psr7UploadedFile(
+                    Stream::create('file contents'),
+                    13,
+                    UPLOAD_ERR_OK,
+                    'avatar.png',
+                    'image/png',
+                ),
+            ]);
 
         $bridge = new Psr7RequestBridge();
+        $file = $bridge->bridge($psr7Request)->file('avatar');
 
-        expect(fn () => $bridge->bridge($psr7Request))
-            ->toThrow(UploadedFilesNotSupportedException::class);
+        expect($file)->toBeInstanceOf(UploadedFile::class)
+            ->and($file->clientFilename())->toBe('avatar.png')
+            ->and($file->clientMediaType())->toBe('image/png')
+            ->and($file->size())->toBe(13)
+            ->and($file->error())->toBe(UPLOAD_ERR_OK)
+            ->and($file->contents())->toBe('file contents');
+
+        $bridge->removeTemporaryFiles();
+    });
+
+    it('maps nested and multiple psr7 uploaded files', function (): void {
+        $psr7Request = (new ServerRequest('POST', 'https://example.test/users'))
+            ->withUploadedFiles([
+                'photos' => [
+                    new Psr7UploadedFile(Stream::create('one'), 3, UPLOAD_ERR_OK, 'one.jpg', 'image/jpeg'),
+                    new Psr7UploadedFile(Stream::create('two'), 3, UPLOAD_ERR_OK, 'two.jpg', 'image/jpeg'),
+                ],
+                'user' => [
+                    'avatar' => new Psr7UploadedFile(Stream::create('me'), 2, UPLOAD_ERR_OK, 'me.png', 'image/png'),
+                ],
+            ]);
+
+        $bridge = new Psr7RequestBridge();
+        $request = $bridge->bridge($psr7Request);
+
+        expect($request->files('photos'))->toHaveCount(2)
+            ->and($request->files('photos')[1]->contents())->toBe('two')
+            ->and($request->file('user.avatar')->clientFilename())->toBe('me.png');
+
+        $bridge->removeTemporaryFiles();
+    });
+
+    it('maps a failed psr7 upload with its error code', function (): void {
+        $psr7Request = (new ServerRequest('POST', 'https://example.test/users'))
+            ->withUploadedFiles([
+                'avatar' => new Psr7UploadedFile(Stream::create(''), 0, UPLOAD_ERR_INI_SIZE, 'huge.png', 'image/png'),
+            ]);
+
+        $file = (new Psr7RequestBridge())->bridge($psr7Request)->file('avatar');
+
+        expect($file->error())->toBe(UPLOAD_ERR_INI_SIZE)
+            ->and($file->isValid())->toBeFalse()
+            ->and($file->clientFilename())->toBe('huge.png');
+    });
+
+    it('reuses the file path of a file-backed psr7 upload stream', function (): void {
+        $path = tempnam(sys_get_temp_dir(), 'rr-upload-');
+        file_put_contents($path, 'from roadrunner');
+
+        $psr7Request = (new ServerRequest('POST', 'https://example.test/users'))
+            ->withUploadedFiles([
+                'avatar' => new Psr7UploadedFile(
+                    Stream::create(fopen($path, 'rb')),
+                    15,
+                    UPLOAD_ERR_OK,
+                    'a.txt',
+                    'text/plain',
+                ),
+            ]);
+
+        $bridge = new Psr7RequestBridge();
+        $file = $bridge->bridge($psr7Request)->file('avatar');
+        $bridge->removeTemporaryFiles();
+
+        expect($file->tempPath())->toBe($path)
+            ->and(file_exists($path))->toBeTrue();
+
+        unlink($path);
+    });
+
+    it('removes temporary upload files it created', function (): void {
+        $psr7Request = (new ServerRequest('POST', 'https://example.test/users'))
+            ->withUploadedFiles([
+                'avatar' => new Psr7UploadedFile(
+                    Stream::create('file contents'),
+                    13,
+                    UPLOAD_ERR_OK,
+                    'avatar.png',
+                    'image/png',
+                ),
+            ]);
+
+        $bridge = new Psr7RequestBridge();
+        $tempPath = $bridge->bridge($psr7Request)->file('avatar')->tempPath();
+
+        expect(file_exists($tempPath))->toBeTrue();
+
+        $bridge->removeTemporaryFiles();
+
+        expect(file_exists($tempPath))->toBeFalse();
     });
 });

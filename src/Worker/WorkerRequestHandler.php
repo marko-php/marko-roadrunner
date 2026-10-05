@@ -72,6 +72,10 @@ readonly class WorkerRequestHandler
 
             return $this->errorResponse($throwable);
         } finally {
+            // Uploads the bridge copied to temporary files must not pile up
+            // across the life of a long-running worker.
+            $this->requestBridge->removeTemporaryFiles();
+
             while (ob_get_level() > $outputBufferLevel) {
                 ob_end_clean();
             }

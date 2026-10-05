@@ -49,13 +49,14 @@ describe('Roadrunner package documentation', function (): void {
             ->and($docs)->toContain('ob_start()');
     });
 
-    it('documents that file uploads are unsupported', function (): void {
+    it('documents that file uploads are mapped to UploadedFile', function (): void {
         $docsPath = monorepoRootPath() . '/packages/docs-markdown/docs/packages/roadrunner.md';
         $docs = file_get_contents($docsPath);
 
         expect($docs)->toContain('File Uploads')
-            ->and($docs)->toContain('UploadedFilesNotSupportedException')
-            ->and($docs)->toContain('$_FILES');
+            ->and($docs)->toContain('Marko\Routing\Http\UploadedFile')
+            ->and($docs)->toContain('removeTemporaryFiles()')
+            ->and($docs)->not->toContain('UploadedFilesNotSupportedException');
     });
 
     it('documents the session cookie caveat', function (): void {

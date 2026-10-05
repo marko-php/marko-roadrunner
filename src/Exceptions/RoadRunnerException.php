@@ -20,4 +20,14 @@ class RoadRunnerException extends MarkoException
                 'at ./rr or ./vendor/bin/rr (or anywhere on your PATH).',
         );
     }
+
+    public static function temporaryUploadFileUnwritable(
+        string $directory,
+    ): self {
+        return new self(
+            message: 'Could not write an uploaded file to a temporary file.',
+            context: "While bridging a PSR-7 uploaded file whose stream is not backed by a local file, in '$directory'",
+            suggestion: 'Make sure the system temporary directory (sys_get_temp_dir()) exists, is writable by the worker process and has free space.',
+        );
+    }
 }

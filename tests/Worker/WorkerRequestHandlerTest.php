@@ -8,9 +8,13 @@ use Marko\Roadrunner\Http\Psr7RequestBridge;
 use Marko\Roadrunner\Http\Psr7ResponseBridge;
 use Marko\Roadrunner\Worker\WorkerLogger;
 use Marko\Roadrunner\Worker\WorkerRequestHandler;
+use Marko\Routing\Http\Request;
 use Marko\Routing\MatchedRoute;
 use Marko\Routing\Router;
 use Nyholm\Psr7\ServerRequest;
+use Nyholm\Psr7\Stream;
+use Nyholm\Psr7\UploadedFile as Psr7UploadedFile;
+use Psr\Http\Message\ServerRequestInterface;
 use RuntimeException;
 
 describe('WorkerRequestHandler', function (): void {
@@ -208,5 +212,48 @@ describe('WorkerRequestHandler', function (): void {
         $handler->run();
 
         expect(ob_get_level())->toBe($levelBefore);
+    });
+
+    it('removes temporary upload files after each request', function (): void {
+        $matcher = new FakeRouteMatcher(onMatch: function (): never {
+            throw new RuntimeException('handler failed after the upload was bridged');
+        });
+        $router = new Router($matcher, new NullContainer());
+        $psr7Worker = new FakePsr7Worker([
+            (new ServerRequest('POST', 'https://example.test/upload'))->withUploadedFiles([
+                'avatar' => new Psr7UploadedFile(Stream::create('one'), 3, UPLOAD_ERR_OK, 'one.png', 'image/png'),
+            ]),
+            (new ServerRequest('POST', 'https://example.test/upload'))->withUploadedFiles([
+                'avatar' => new Psr7UploadedFile(Stream::create('two'), 3, UPLOAD_ERR_OK, 'two.png', 'image/png'),
+            ]),
+        ]);
+        $requestBridge = new class () extends Psr7RequestBridge
+        {
+            /** @var list<string> */
+            public array $tempPaths = [];
+
+            public function bridge(
+                ServerRequestInterface $psr7Request,
+            ): Request {
+                $request = parent::bridge($psr7Request);
+                $this->tempPaths[] = $request->file('avatar')->tempPath();
+
+                return $request;
+            }
+        };
+        $handler = new WorkerRequestHandler(
+            psr7Worker: $psr7Worker,
+            router: $router,
+            requestBridge: $requestBridge,
+            responseBridge: new Psr7ResponseBridge(),
+            logger: new WorkerLogger(),
+            container: new NullContainer(),
+        );
+
+        $handler->run();
+
+        expect($requestBridge->tempPaths)->toHaveCount(2)
+            ->and(file_exists($requestBridge->tempPaths[0]))->toBeFalse()
+            ->and(file_exists($requestBridge->tempPaths[1]))->toBeFalse();
     });
 });
