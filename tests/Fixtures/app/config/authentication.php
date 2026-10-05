@@ -25,7 +25,14 @@ return [
         ],
     ],
     'remember' => [
-        'expiration' => 43200,
-        'cookie' => 'remember_token',
+        'lifetime' => 43200,
+        'cookie' => [
+            'prefix' => 'remember_',
+            'path' => '/',
+            'domain' => '',
+            'secure' => null,
+            'http_only' => true,
+            'same_site' => 'Lax',
+        ],
     ],
 ];
