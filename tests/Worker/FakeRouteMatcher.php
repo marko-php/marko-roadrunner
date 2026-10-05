@@ -16,6 +16,12 @@ use Marko\Routing\RouteMatcherInterface;
  */
 class FakeRouteMatcher implements RouteMatcherInterface
 {
+    public function allowedMethods(
+        string $path,
+    ): array {
+        return [];
+    }
+
     public private(set) int $matchCount = 0;
 
     public function __construct(
