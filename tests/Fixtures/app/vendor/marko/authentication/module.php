@@ -12,6 +12,7 @@ use Marko\Authentication\Hashing\BcryptPasswordHasher;
 use Marko\Authentication\Middleware\QueuedCookiesMiddleware;
 use Marko\Authentication\Token\RememberTokenManager;
 use Marko\Core\Container\ContainerInterface;
+use Psr\Clock\ClockInterface;
 
 // Mirrors packages/authentication/module.php — AuthManager and GuardInterface
 // as singletons are precisely what task 005/006 hunt for leaks in.
@@ -30,6 +31,7 @@ return [
         },
         RememberTokenManager::class => function (ContainerInterface $container): RememberTokenManager {
             return new RememberTokenManager(
+                clock: $container->get(ClockInterface::class),
                 lifetimeMinutes: $container->get(AuthConfig::class)->rememberLifetime(),
             );
         },
