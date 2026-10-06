@@ -7,4 +7,6 @@ declare(strict_types=1);
 return [
     'key' => base64_encode(str_repeat('a', 32)),
     'cipher' => 'aes-256-gcm',
+    'previous_keys' => [],
+    'aad_fallback' => false,
 ];
