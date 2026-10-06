@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace Marko\Roadrunner\Tests\Support;
 
+use ArrayObject;
 use Marko\Core\Container\Container;
+use Marko\Core\Contracts\ResettableInterface;
+use Marko\Core\RequestStateResetter;
 
 use function Marko\Roadrunner\Tests\inProcessHarnessFixturePath;
 
@@ -85,6 +88,36 @@ describe('InProcessRequestHarness', function (): void {
 
         expect($first->body())->toContain('user=1')
             ->and($second->body())->toContain('user=guest');
+    });
+
+    it('resets in the same sorted binding order as the worker\'s RequestStateResetter', function (): void {
+        $harness = new InProcessRequestHarness(inProcessHarnessFixturePath());
+        $container = $harness->container();
+        $log = new ArrayObject();
+
+        foreach (['zz.probe.charlie', 'zz.probe.alpha', 'zz.probe.bravo'] as $id) {
+            $container->instance($id, new readonly class ($id, $log) implements ResettableInterface
+            {
+                public function __construct(
+                    private string $id,
+                    private ArrayObject $log,
+                ) {}
+
+                public function reset(): void
+                {
+                    $this->log->append($this->id);
+                }
+            });
+        }
+
+        $harness->reset();
+        $harnessOrder = $log->getArrayCopy();
+
+        $log->exchangeArray([]);
+        new RequestStateResetter($container)->reset();
+
+        expect($harnessOrder)->toBe(['zz.probe.alpha', 'zz.probe.bravo', 'zz.probe.charlie'])
+            ->and($log->getArrayCopy())->toBe($harnessOrder);
     });
 
     it('requires no roadrunner binary', function (): void {

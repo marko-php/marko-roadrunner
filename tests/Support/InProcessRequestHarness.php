@@ -6,7 +6,6 @@ namespace Marko\Roadrunner\Tests\Support;
 
 use Marko\Core\Application;
 use Marko\Core\Container\Container;
-use Marko\Core\Contracts\ResettableInterface;
 use Marko\Core\Exceptions\BindingConflictException;
 use Marko\Core\Exceptions\BindingException;
 use Marko\Core\Exceptions\CircularDependencyException;
@@ -16,6 +15,7 @@ use Marko\Core\Exceptions\EventException;
 use Marko\Core\Exceptions\ModuleException;
 use Marko\Core\Exceptions\PluginException;
 use Marko\Core\Exceptions\PreferenceConflictException;
+use Marko\Core\RequestStateResetter;
 use Marko\Routing\Exceptions\RouteConflictException;
 use Marko\Routing\Exceptions\RouteException;
 use Marko\Routing\Http\Request;
@@ -71,7 +71,9 @@ class InProcessRequestHarness
 
     /**
      * Clear request-scoped state from every currently resolved
-     * ResettableInterface instance (e.g. Session, SessionGuard). Opt-in and
+     * ResettableInterface instance (e.g. Session, SessionGuard) through the
+     * same RequestStateResetter the RoadRunner worker uses, so the harness
+     * resets exactly as the worker does, in the same order. Opt-in and
      * non-destructive — nothing is reset automatically between handle()
      * calls, so leak scenarios remain observable unless a caller resets.
      *
@@ -79,9 +81,7 @@ class InProcessRequestHarness
      */
     public function reset(): void
     {
-        foreach ($this->container()->resolvedInstances(ResettableInterface::class) as $resettable) {
-            $resettable->reset();
-        }
+        new RequestStateResetter($this->container())->reset();
     }
 
     /**
