@@ -35,4 +35,11 @@ return [
             'same_site' => 'Lax',
         ],
     ],
+    'throttle' => [
+        'enabled' => true,
+        'max_attempts' => 5,
+        'decay_seconds' => 60,
+        'lockout_seconds' => 60,
+        'max_lockout_seconds' => 3600,
+    ],
 ];
