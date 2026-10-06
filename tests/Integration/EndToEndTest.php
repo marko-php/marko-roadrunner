@@ -111,16 +111,27 @@ it('does not leak the authenticated user between two different clients', functio
     ->skip(fn (): bool => locateRoadRunnerBinary() === null, roadRunnerSkipReason())
     ->group('integration-destructive');
 
-it('sets a session cookie on the first request and not on the second', function (): void {
+it('sets a session cookie on the first write and not on the next request', function (): void {
     $client = sharedRoadRunnerServer()->client();
 
-    $first = $client->get('/session/read');
+    $first = $client->get('/session/write');
     $cookie = $first->cookiePair();
     $second = $client->get('/session/read', $cookie);
 
     expect($first->setCookie)->not->toBeNull()
         ->and($cookie)->not->toBeNull()
         ->and($second->setCookie)->toBeNull();
+})
+    ->skip(fn (): bool => locateRoadRunnerBinary() === null, roadRunnerSkipReason())
+    ->group('integration-destructive');
+
+it('sets no session cookie for a request that only reads an absent session', function (): void {
+    $client = sharedRoadRunnerServer()->client();
+
+    $response = $client->get('/session/read');
+
+    expect($response->statusCode)->toBe(200)
+        ->and($response->setCookie)->toBeNull();
 })
     ->skip(fn (): bool => locateRoadRunnerBinary() === null, roadRunnerSkipReason())
     ->group('integration-destructive');
