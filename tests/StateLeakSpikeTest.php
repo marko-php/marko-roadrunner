@@ -211,6 +211,8 @@ describe('State-leak discovery spike', function (): void {
         );
 
         $moduleFiles = [
+            'admin' => $root . '/packages/admin/module.php',
+            'admin-auth' => $root . '/packages/admin-auth/module.php',
             'authentication' => $root . '/packages/authentication/module.php',
             'authorization' => $root . '/packages/authorization/module.php',
             'codeindexer' => $root . '/packages/codeindexer/module.php',
