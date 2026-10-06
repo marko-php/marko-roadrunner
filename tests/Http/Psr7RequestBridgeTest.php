@@ -69,6 +69,67 @@ describe('Psr7RequestBridge', function (): void {
         expect($request->header('Accept'))->toBe('text/html, application/json');
     });
 
+    it('drops an underscore header so it cannot override the dash form it would collide with', function (): void {
+        $psr7Request = new ServerRequest(
+            'GET',
+            'https://example.test/users',
+            [
+                'X-Forwarded-For' => '10.0.0.1',
+                'X_Forwarded_For' => '6.6.6.6',
+            ],
+        );
+
+        $request = (new Psr7RequestBridge())->bridge($psr7Request);
+
+        expect($request->header('X-Forwarded-For'))->toBe('10.0.0.1')
+            ->and($request->server('HTTP_X_FORWARDED_FOR'))->toBe('10.0.0.1');
+    });
+
+    it('drops an underscore header even when it is iterated before the dash form', function (): void {
+        $psr7Request = new ServerRequest(
+            'GET',
+            'https://example.test/users',
+            [
+                'X_Forwarded_Proto' => 'http',
+                'X-Forwarded-Proto' => 'https',
+            ],
+        );
+
+        $request = (new Psr7RequestBridge())->bridge($psr7Request);
+
+        expect($request->header('X-Forwarded-Proto'))->toBe('https');
+    });
+
+    it('ignores an underscore header when no dash form is present', function (): void {
+        $psr7Request = new ServerRequest(
+            'GET',
+            'https://example.test/users',
+            ['X_Forwarded_For' => '6.6.6.6'],
+        );
+
+        $request = (new Psr7RequestBridge())->bridge($psr7Request);
+
+        expect($request->header('X-Forwarded-For'))->toBeNull()
+            ->and($request->server('HTTP_X_FORWARDED_FOR'))->toBeNull();
+    });
+
+    it('still maps legitimate dash headers alongside a dropped underscore header', function (): void {
+        $psr7Request = new ServerRequest(
+            'GET',
+            'https://example.test/users',
+            [
+                'X_Request_Id' => 'spoofed',
+                'X-Request-Id' => 'abc-123',
+                'Content-Type' => 'application/json',
+            ],
+        );
+
+        $request = (new Psr7RequestBridge())->bridge($psr7Request);
+
+        expect($request->header('X-Request-Id'))->toBe('abc-123')
+            ->and($request->server('CONTENT_TYPE'))->toBe('application/json');
+    });
+
     it('includes the query string in the request uri server key', function (): void {
         $psr7Request = new ServerRequest('GET', 'https://example.test/users?page=2&sort=name');
 
