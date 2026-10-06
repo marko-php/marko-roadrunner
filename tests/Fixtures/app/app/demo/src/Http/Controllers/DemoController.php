@@ -7,11 +7,9 @@ namespace Marko\Roadrunner\Tests\Fixtures\Demo\Http\Controllers;
 use Marko\Authentication\Contracts\GuardInterface;
 use Marko\Authentication\Exceptions\AuthException;
 use Marko\Routing\Attributes\Get;
-use Marko\Routing\Attributes\Middleware;
 use Marko\Routing\Attributes\Post;
 use Marko\Routing\Http\Response;
 use Marko\Security\Contracts\CsrfTokenManagerInterface;
-use Marko\Security\Middleware\CsrfMiddleware;
 use Marko\Session\Contracts\SessionInterface;
 use Marko\Session\Exceptions\SessionNotStartedException;
 use Random\RandomException;
@@ -84,12 +82,11 @@ class DemoController
     }
 
     /**
-     * Only reachable once CsrfMiddleware has validated the submitted token
-     * against the caller's session — an invalid or missing token never
-     * reaches this method.
+     * Only reachable once the global CsrfMiddleware has validated the
+     * submitted token against the caller's session — an invalid or missing
+     * token never reaches this method.
      */
     #[Post('/csrf/submit')]
-    #[Middleware(CsrfMiddleware::class)]
     public function csrfSubmit(): Response
     {
         return new Response('csrf-ok');

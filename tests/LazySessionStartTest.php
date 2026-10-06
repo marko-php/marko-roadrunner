@@ -66,6 +66,40 @@ describe('lazy session start in a long-running worker', function (): void {
             ->and($submit->body())->toBe('csrf-ok');
     });
 
+    it('enforces the global CsrfMiddleware and accepts the echoed XSRF-TOKEN', function (): void {
+        $harness = new InProcessRequestHarness(inProcessHarnessFixturePath());
+
+        $tokenResponse = $harness->handle(inProcessHarnessRequest('GET', '/csrf/token'));
+        $harness->reset();
+        $sessionId = (string) lazySessionCookie($tokenResponse);
+        $xsrfCookie = null;
+
+        foreach ($tokenResponse->cookies() as $cookie) {
+            if ($cookie->name() === 'XSRF-TOKEN') {
+                $xsrfCookie = $cookie->value();
+            }
+        }
+
+        $rejected = $harness->handle(new Request(
+            server: ['REQUEST_METHOD' => 'POST', 'REQUEST_URI' => '/csrf/submit', 'HTTP_ACCEPT' => 'application/json'],
+            cookies: [inProcessHarnessSessionCookieName() => $sessionId],
+        ));
+        $harness->reset();
+
+        $accepted = $harness->handle(new Request(
+            server: [
+                'REQUEST_METHOD' => 'POST',
+                'REQUEST_URI' => '/csrf/submit',
+                'HTTP_X_XSRF_TOKEN' => (string) $xsrfCookie,
+            ],
+            cookies: [inProcessHarnessSessionCookieName() => $sessionId, 'XSRF-TOKEN' => (string) $xsrfCookie],
+        ));
+
+        expect($xsrfCookie)->toBe($tokenResponse->body())
+            ->and($rejected->statusCode())->toBe(419)
+            ->and($accepted->body())->toBe('csrf-ok');
+    });
+
     it('serves consecutive cookieless requests in one process without leaking session data', function (): void {
         $harness = new InProcessRequestHarness(inProcessHarnessFixturePath());
 
