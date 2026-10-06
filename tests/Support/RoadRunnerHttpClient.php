@@ -116,19 +116,21 @@ readonly class RoadRunnerHttpClient
                 && stripos($line, 'chunked') !== false,
         );
 
-        // Reversed so the first match is the last Set-Cookie in wire order:
-        // when a response carries several, the last one wins.
-        $setCookieLine = array_find(
-            array_reverse($headerLines),
-            static fn (string $line): bool => stripos($line, 'Set-Cookie:') === 0,
-        );
+        // Every Set-Cookie in wire order: a response can carry the session
+        // cookie and the XSRF-TOKEN cookie together, and a test needs both to
+        // replay the client's cookie jar on the next request.
+        $setCookies = array_values(array_map(
+            static fn (string $line): string => trim(substr($line, strlen('Set-Cookie:'))),
+            array_filter(
+                $headerLines,
+                static fn (string $line): bool => stripos($line, 'Set-Cookie:') === 0,
+            ),
+        ));
 
         return new RoadRunnerHttpResponse(
             statusCode: isset($matches[1]) ? (int) $matches[1] : 0,
             body: $chunked ? $this->decodeChunkedBody($rawBody) : $rawBody,
-            setCookie: $setCookieLine === null
-                ? null
-                : trim(substr($setCookieLine, strlen('Set-Cookie:'))),
+            setCookies: $setCookies,
         );
     }
 

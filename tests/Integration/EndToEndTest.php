@@ -118,9 +118,11 @@ it('sets a session cookie on the first write and not on the next request', funct
     $cookie = $first->cookiePair();
     $second = $client->get('/session/read', $cookie);
 
-    expect($first->setCookie)->not->toBeNull()
+    // The XSRF-TOKEN cookie is reissued whenever the session is saved, so
+    // only the session cookie itself proves whether a session was started.
+    expect($first->sessionCookie())->not->toBeNull()
         ->and($cookie)->not->toBeNull()
-        ->and($second->setCookie)->toBeNull();
+        ->and($second->sessionCookie())->toBeNull();
 })
     ->skip(fn (): bool => locateRoadRunnerBinary() === null, roadRunnerSkipReason())
     ->group('integration-destructive');
@@ -131,7 +133,7 @@ it('sets no session cookie for a request that only reads an absent session', fun
     $response = $client->get('/session/read');
 
     expect($response->statusCode)->toBe(200)
-        ->and($response->setCookie)->toBeNull();
+        ->and($response->setCookies)->toBe([]);
 })
     ->skip(fn (): bool => locateRoadRunnerBinary() === null, roadRunnerSkipReason())
     ->group('integration-destructive');
