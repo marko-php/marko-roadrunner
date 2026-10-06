@@ -84,6 +84,14 @@ class Psr7RequestBridge
         }
 
         foreach ($psr7Request->getHeaders() as $name => $values) {
+            // Header names containing an underscore are dropped, matching nginx's default
+            // (underscores_in_headers off). Otherwise `X_Forwarded_For` and `X-Forwarded-For`
+            // would both normalise to HTTP_X_FORWARDED_FOR, letting a client override a
+            // proxy-set header and spoof the client IP or scheme for trusted-proxy logic.
+            if (str_contains((string) $name, '_')) {
+                continue;
+            }
+
             $normalized = strtoupper(str_replace('-', '_', $name));
             $value = implode(', ', $values);
 
